@@ -117,16 +117,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         int padding = (int) (width * 0.10); // offset from edges of the map 10% of screen
 
         CameraUpdate cu = CameraUpdateFactory.newLatLngBounds(bounds, width, height, padding);
-        mGoogleMap.animateCamera(cu);
-
         smartLocation.geofencing().add(geoRamada)
                 .start(new OnGeofencingTransitionListener() {
                     @Override
                     public void onGeofenceTransition(TransitionGeofence geoFence) {
-                        Log.v(TAG, "User Entered the location");
+                        Log.v(TAG, "User has Entered the location");
                         if (geoFence.getTransitionType() == Geofence.GEOFENCE_TRANSITION_ENTER) {
                             AlertDialog dialog = new AlertDialog.Builder(MainActivity.this)
-                                    .setMessage("User Entered the GeoFence")
+                                    .setMessage("User has Entered the GeoFence")
                                     .setPositiveButton("Ok", null)
                                     .create();
                             dialog.show();
@@ -215,17 +213,16 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void getLastKnownLocation() {
         long mLocTrackingInterval = 1000; // 5 sec
-        float trackingDistance = 0;
+        final float DISTANCE_HIGH = 1f;
         LocationAccuracy trackingAccuracy = LocationAccuracy.HIGH;
-        LocationParams.Builder builder = new LocationParams.Builder()
+        LocationParams params = new LocationParams.Builder()
                 .setAccuracy(trackingAccuracy)
-                .setDistance(trackingDistance)
-                .setInterval(mLocTrackingInterval);
+                .setDistance(DISTANCE_HIGH)
+                .setInterval(mLocTrackingInterval).build();
 
         SmartLocation.with(MainActivity.this)
-                .location()
-                .continuous()
-                .config(builder.build())
+                .location(provider)
+                .config(params)
                 .start(new OnLocationUpdatedListener() {
                     @Override
                     public void onLocationUpdated(Location location) {
@@ -251,6 +248,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         int padding = (int) (width * 0.10); // offset from edges of the map 10% of screen
 
                        CameraUpdate cu= CameraUpdateFactory.newLatLngBounds(bounds, width, height, padding);
+                        mGoogleMap.animateCamera(cu);
 
                     }
                 });
