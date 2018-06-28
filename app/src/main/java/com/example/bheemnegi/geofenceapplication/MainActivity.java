@@ -12,6 +12,7 @@ import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
+import android.widget.Toast;
 
 import com.google.android.gms.location.DetectedActivity;
 import com.google.android.gms.location.Geofence;
@@ -45,10 +46,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     SupportMapFragment supportMapFragment;
     GoogleMap mGoogleMap;
     LocationGooglePlayServicesProvider provider;
-    private Marker fenceMarker = null;
-    Marker locationMarker=null;
+    private Marker fenceMarker;
+    Marker locationMarker;
     private Circle geoCircle;
-    Location lastLocation;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,18 +59,19 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         supportMapFragment.getMapAsync(this);
     }
 
-    private void startLocation() {
+    @Override
+    public void onMapReady(GoogleMap googleMap) {
+        mGoogleMap = googleMap;
+        Log.v(TAG, "On Map ready Called");
+        startGeoFence();
+    }
+
+    private void startGeoFence() {
         provider = new LocationGooglePlayServicesProvider();
         provider.setCheckLocationSettings(true);
 
         SmartLocation smartLocation = new SmartLocation.Builder(this)
                 .logging(true).build();
-
-        /** User's location, a notification will be sent to the user
-         *  if he enters inside the GEOFENCE
-         *
-         */
-
 
         smartLocation.location(provider).start(new OnLocationUpdatedListener() {
             @Override
@@ -78,66 +79,136 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
             }
         });
+
         smartLocation.activity().start(this);
 
-
-        /**GEOFENCE for the location where we need to reach
-         *
-         */
-        GeofenceModel geoRamada = new GeofenceModel.Builder("Ramada")
-                .setTransition(Geofence.GEOFENCE_TRANSITION_ENTER)
-                .setLatitude(28.4500)
-                .setLongitude(77.0712)
+        GeofenceModel geoSatin = new GeofenceModel.Builder("Ramada")
+                .setTransition(Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_EXIT)
+                .setLatitude(28.450097)
+                .setLongitude(77.071368)
                 .setExpiration(Geofence.NEVER_EXPIRE)
-                .setRadius(50)
+                .setRadius(30.00f)
                 .build();
 
-        LatLng latLng = new LatLng(28.4500, 77.0712);
-        MarkerOptions markerOptions = new MarkerOptions()
-                .position(latLng)
-                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
-                .title("Location Main");
+        /**GeoFence for the location where we need to reach
+         *
+         */
+
+        LatLng latLng = new LatLng(28.450097, 77.071368);
+        MarkerOptions markerOptions = getMarkerOption(latLng, "Office location");
 
         if (mGoogleMap != null) {
             // Remove last geoFenceMarker
+            if (fenceMarker != null) {
+                fenceMarker.remove();
+            }
             fenceMarker = mGoogleMap.addMarker(markerOptions);
         }
 
-        LatLngBounds.Builder builder = new LatLngBounds.Builder();
-        //Marker added
-        builder.include(fenceMarker.getPosition());
-        LatLngBounds bounds = builder.build();
+        createFence();
+        LatLngBounds bounds = new LatLngBounds.Builder().include(fenceMarker.getPosition())
+                .build();
 
         int width = getResources().getDisplayMetrics().widthPixels;
         int height = getResources().getDisplayMetrics().heightPixels;
         int padding = (int) (width * 0.10); // offset from edges of the map 10% of screen
-
-        CameraUpdate cu= CameraUpdateFactory.newLatLngBounds(bounds, width, height, padding);
+        CameraUpdate cu = CameraUpdateFactory.newLatLngBounds(bounds, width, height, padding);
         mGoogleMap.animateCamera(cu);
 
-        createFence();
-        smartLocation.geofencing().add(geoRamada)
+        smartLocation.geofencing().add(geoSatin)
                 .start(new OnGeofencingTransitionListener() {
                     @Override
-                    public void onGeofenceTransition(TransitionGeofence geofence) {
-                        Log.v(TAG, "Click GeoFence");
-                        Log.v(TAG,geofence.getGeofenceModel().toGeofence().getRequestId()
-                                + geofence.getTransitionType());
+                    public void onGeofenceTransition(TransitionGeofence geoFence) {
+                        if (geoFence.getTransitionType() == Geofence.GEOFENCE_TRANSITION_ENTER) {
+                            AlertDialog dialog = new AlertDialog.Builder(MainActivity.this)
+                                    .setMessage("User Entered the GeoFence")
+                                    .setNegativeButton("Ok", null)
+                                    .create();
+                            dialog.show();
+                        }
+
+                        if (geoFence.getTransitionType() == Geofence.GEOFENCE_TRANSITION_EXIT) {
+                            AlertDialog dialog = new AlertDialog.Builder(MainActivity.this)
+                                    .setMessage("User has left the GeoFence")
+                                    .setNegativeButton("Ok", null)
+                                    .create();
+                            dialog.show();
+                        }
                     }
                 });
+
     }
 
     private void createFence() {
-        if (geoCircle != null) {
-            geoCircle.remove();
-        }
-        CircleOptions circleOptions = new CircleOptions().center(fenceMarker.getPosition())
-                .strokeColor(Color.argb(50, 70, 70, 70))
-                .fillColor(Color.argb(100, 150, 150, 150))
-                .radius(20.00);
-        geoCircle = mGoogleMap.addCircle(circleOptions);
- getLastKnownLocation();
+        CircleOptions circleOptions = new CircleOptions()
+                .center( fenceMarker.getPosition())
+                .strokeColor(Color.argb(50, 70,70,70))
+                .fillColor( Color.argb(100, 150,150,150) )
+                .radius( 30.00 );
+        geoCircle = mGoogleMap.addCircle( circleOptions );
+        getUserLocationMarker();
+    }
 
+    private void getUserLocationMarker() {
+
+        /** User's location, a notification will be sent to the user
+         *  if he enters inside the GeoFence
+         */
+        long mLocTrackingInterval = 1000; // 5 sec
+        float trackingDistance = 0;
+        LocationAccuracy trackingAccuracy = LocationAccuracy.HIGH;
+        LocationParams.Builder builder = new LocationParams.Builder()
+                .setAccuracy(trackingAccuracy)
+                .setDistance(trackingDistance)
+                .setInterval(mLocTrackingInterval);
+
+        SmartLocation.with(MainActivity.this)
+                .location()
+                .continuous()
+                .config(builder.build())
+                .start(new OnLocationUpdatedListener() {
+                    @Override
+                    public void onLocationUpdated(Location location) {
+
+                        LatLng coordinates = new LatLng(location.getLatitude(), location.getLongitude());
+
+                        MarkerOptions options = getMarkerOption(coordinates, "User Location");
+
+                        if (mGoogleMap!=null) {
+                            if (locationMarker != null) {
+                                locationMarker.remove();
+                            }
+                            locationMarker = mGoogleMap.addMarker(options);
+                        }
+                            Log.v(TAG, "User Location");
+
+                        LatLngBounds.Builder builder = new LatLngBounds.Builder();
+                        builder.include(locationMarker.getPosition());
+                        LatLngBounds bounds = builder.build();
+
+                        int width = getResources().getDisplayMetrics().widthPixels;
+                        int height = getResources().getDisplayMetrics().heightPixels;
+                        int padding = (int) (width * 0.10); // offset from edges of the map 10% of screen
+
+                        CameraUpdateFactory.newLatLngBounds(bounds, width, height, padding);
+                        Log.v(TAG,"end of getUserLocation marker");
+                    }
+                });
+
+    }
+
+    @Override
+    public void onActivityUpdated(DetectedActivity detectedActivity) {
+    }
+
+    private void showActivity(DetectedActivity detectedActivity) {
+    }
+
+    public MarkerOptions getMarkerOption(LatLng latLng, String title) {
+        return new MarkerOptions()
+                .position(latLng)
+                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
+                .title(title);
     }
 
     private void checkingPermissions() {
@@ -194,66 +265,5 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             // other 'case' lines to check for other
             // permissions this app might request.
         }
-    }
-
-
-    private void getLastKnownLocation() {
-        long mLocTrackingInterval = 1000; // 5 sec
-        float trackingDistance = 0;
-        LocationAccuracy trackingAccuracy = LocationAccuracy.HIGH;
-        LocationParams.Builder builder = new LocationParams.Builder()
-                .setAccuracy(trackingAccuracy)
-                .setDistance(trackingDistance)
-                .setInterval(mLocTrackingInterval);
-
-        SmartLocation.with(MainActivity.this)
-                .location()
-                .continuous()
-                .config(builder.build())
-                .start(new OnLocationUpdatedListener() {
-                    @Override
-                    public void onLocationUpdated(Location location) {
-
-                        lastLocation = location;
-                        LatLng coordinates = new LatLng(location.getLatitude(), location.getLongitude());
-                        MarkerOptions options = new MarkerOptions()
-                                .position(coordinates)
-                                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
-                                .title("User Location");
-                       if(mGoogleMap!=null) {
-                           if(locationMarker !=null){
-                               locationMarker.remove();
-                           }
-                           locationMarker = mGoogleMap.addMarker(options);
-                           Log.v(TAG,"User Location");
-                       }
-
-                        LatLngBounds.Builder builder = new LatLngBounds.Builder();
-                        builder.include(locationMarker.getPosition());
-                        LatLngBounds bounds = builder.build();
-
-                        int width = getResources().getDisplayMetrics().widthPixels;
-                        int height = getResources().getDisplayMetrics().heightPixels;
-                        int padding = (int) (width * 0.10); // offset from edges of the map 10% of screen
-
-                       CameraUpdateFactory.newLatLngBounds(bounds, width, height, padding);
-
-                    }
-                });
-
-    }
-
-    @Override
-    public void onActivityUpdated(DetectedActivity detectedActivity) {
-    }
-
-    private void showActivity(DetectedActivity detectedActivity) {
-    }
-
-    @Override
-    public void onMapReady(GoogleMap googleMap) {
-        mGoogleMap = googleMap;
-        Log.v(TAG, "On Map ready Called");
-        startLocation();
     }
 }
