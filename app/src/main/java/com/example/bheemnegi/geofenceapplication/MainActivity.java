@@ -2,7 +2,10 @@ package com.example.bheemnegi.geofenceapplication;
 
 import android.Manifest;
 import android.app.AlertDialog;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.location.Location;
@@ -39,6 +42,8 @@ import io.nlopez.smartlocation.location.config.LocationAccuracy;
 import io.nlopez.smartlocation.location.config.LocationParams;
 import io.nlopez.smartlocation.location.providers.LocationGooglePlayServicesProvider;
 
+import static com.example.bheemnegi.geofenceapplication.MyApplication.smartLocation;
+
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback, OnActivityUpdatedListener {
 
     private static final String TAG = "MainActivity";
@@ -49,6 +54,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private Marker fenceMarker;
     Marker locationMarker;
     private Circle geoCircle;
+    PendingIntent mGeoFencingPendingIntent;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,15 +62,16 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         setContentView(R.layout.activity_main);
         checkingPermissions();
         supportMapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map);
-        supportMapFragment.getMapAsync(this);
+        try {
+            supportMapFragment.getMapAsync(this);
+        }catch (NullPointerException e){
+            e.printStackTrace();
+        }
     }
 
     private void startLocation() {
         provider = new LocationGooglePlayServicesProvider();
         provider.setCheckLocationSettings(true);
-
-        SmartLocation smartLocation = new SmartLocation.Builder(this)
-                .logging(true).build();
 
         /** User's location, a notification will be sent to the user
          *  if he enters inside the GEOFENCE
@@ -78,9 +85,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         });
         smartLocation.activity().start(this);
 
-
         /**GEOFENCE for the location where we need to reach
-         *
+         *My Location 28.450097,77.071368
+
+
+         Ramada  28.4500, 77.0712
          */
 
         GeofenceModel geoRamada = new GeofenceModel.Builder("Ramada")
@@ -88,7 +97,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .setLatitude(28.450097)
                 .setLongitude(77.071368)
                 .setExpiration(Geofence.NEVER_EXPIRE)
-                .setRadius(25)
+                .setRadius(33.00f)
                 .build();
 
         LatLng latLng = new LatLng(28.450097, 77.071368);
@@ -108,7 +117,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         createFence();
 
         LatLngBounds.Builder builder = new LatLngBounds.Builder();
-        //Marker added
         builder.include(fenceMarker.getPosition());
         LatLngBounds bounds = builder.build();
 
@@ -116,29 +124,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         int height = getResources().getDisplayMetrics().heightPixels;
         int padding = (int) (width * 0.10); // offset from edges of the map 10% of screen
 
-        CameraUpdate cu = CameraUpdateFactory.newLatLngBounds(bounds, width, height, padding);
-        smartLocation.geofencing().add(geoRamada)
-                .start(new OnGeofencingTransitionListener() {
-                    @Override
-                    public void onGeofenceTransition(TransitionGeofence geoFence) {
-                        Log.v(TAG, "User has Entered the location");
-                        if (geoFence.getTransitionType() == Geofence.GEOFENCE_TRANSITION_ENTER) {
-                            AlertDialog dialog = new AlertDialog.Builder(MainActivity.this)
-                                    .setMessage("User has Entered the GeoFence")
-                                    .setPositiveButton("Ok", null)
-                                    .create();
-                            dialog.show();
-                        }
+        CameraUpdate cu= CameraUpdateFactory.newLatLngBounds(bounds, width, height, padding);
+        mGoogleMap.animateCamera(cu);
 
-                        if (geoFence.getTransitionType() == Geofence.GEOFENCE_TRANSITION_EXIT) {
-                            AlertDialog dialog = new AlertDialog.Builder(MainActivity.this)
-                                    .setMessage("User has left the GeoFence")
-                                    .setPositiveButton("Ok", null)
-                                    .create();
-                            dialog.show();
-                        }
-                    }
-                });
+        smartLocation.geofencing().add(geoRamada);
+
+        Intent intent= new Intent(MainActivity.this, GeofenceIntentService.class);
+        startService(intent);
     }
 
     private void createFence() {
@@ -184,7 +176,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION},
                         MY_PERMISSIONS_REQUEST_LOCATION);
             }
-
         }
     }
 
@@ -210,10 +201,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
     }
 
-
     private void getLastKnownLocation() {
         long mLocTrackingInterval = 1000; // 5 sec
-        final float DISTANCE_HIGH = 1f;
+        final float DISTANCE_HIGH = 0;
         LocationAccuracy trackingAccuracy = LocationAccuracy.HIGH;
         LocationParams params = new LocationParams.Builder()
                 .setAccuracy(trackingAccuracy)
@@ -248,7 +238,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         int padding = (int) (width * 0.10); // offset from edges of the map 10% of screen
 
                        CameraUpdate cu= CameraUpdateFactory.newLatLngBounds(bounds, width, height, padding);
-                        mGoogleMap.animateCamera(cu);
+
 
                     }
                 });
@@ -269,5 +259,19 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         mGoogleMap = googleMap;
         Log.v(TAG, "On Map ready Called");
         startLocation();
+    }
+
+    public PendingIntent getGeoFencingPendingIntent() {
+        if(mGeoFencingPendingIntent!=null){
+            return mGeoFencingPendingIntent;
+        }
+
+        Intent intent=new Intent(this, BroadcastReceiver.class);
+        mGeoFencingPendingIntent=PendingIntent.getBroadcast(this,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT);
+        return mGeoFencingPendingIntent;
+
     }
 }
